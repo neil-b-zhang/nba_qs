@@ -7,7 +7,6 @@ Created on Mon Mar  4 17:40:22 2019
 
 from nba_api.stats.static import teams
 from nba_api.stats.endpoints import leaguegamefinder
-import sys
 import os
 import pandas as pd
 import numpy as np
@@ -17,7 +16,7 @@ import json
 import random
 from time import sleep
 
-# CONSTANTS AND VARIABLES
+# CONSTANTS AND GLOBAL VARIABLES
 WD = os.getcwd() + '/'
 CURR_YEAR = '2018'
 get_games_flag = False
@@ -62,6 +61,8 @@ def get_games_list(get_games_bool):
         return all_games_unique
         
 def check_existing_games(games):
+    # function for updating game_id list by removing game_ids that have already
+    # been done in a previous run; this function removes existing 
     if os.path.isfile(WD + OUTPUT_NAME):
         print('        Previous data found, checking game_ids...')
         try:
@@ -73,7 +74,7 @@ def check_existing_games(games):
         except:
             print('        Empty dataset found, starting fresh...')
             return games
-
+    # if no previous file exists, start fresh
     else:
         print('        No previous data found, starting fresh...')
         return games
@@ -89,17 +90,29 @@ def get_scores_by_quarter(games):
     count = 1
     total = len(games)
     scores_by_quarter_df = pd.DataFrame()
-   
+    
+    # checkpoints for backing up data
+    cp1 = False
+    cp2 = False
+    cp3 = False
+    
+    # loop through each nba game based on game_id
     for game in games:
-        
-        print('        Currently getting quarter scores for game_id: {} ({}/{})'.format(game, count, total))
+        # calculate % done so far
+        percentage_done = count/total*100
+
+        print('        Currently getting quarter scores for game_id: {} ({}/{}, {}%)'.format(game, count, total, round(percentage_done, 2)))
         data_by_game_id_url = 'https://stats.nba.com/stats/boxscoresummaryv2?GameID={}'.format(game)
        
         # add headers to spoof access from a browser
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/72.0.3626.96 Safari/537.36'}
         
-        # add delay between requests for large lists of games
-        sleep(random.uniform(0.1, 0.3))
+        # add delay between requests for large lists of games to prevent being
+        # rate limited
+        if total > 50:
+            sleep(random.uniform(0.15, 0.4))
+        else:
+            sleep(random.uniform(0.05, 0.1))
         
         # make HTTP request to nba stats and get json output
         data_by_gameid_json = requests.get(data_by_game_id_url, headers=headers)
@@ -128,7 +141,8 @@ def get_scores_by_quarter(games):
             away_team.append((data['resultSets'][5]['rowSet'][1][4]))
             away_points.append((data['resultSets'][5]['rowSet'][1][8+quarter]))
             quarter_num.append(1+quarter)
-        
+            # END quarter loop
+            
         # create dataframe for all quarters in single game
         game_data_df = pd.DataFrame({'home_team': home_team,
                                      'away_team': away_team,
@@ -138,9 +152,24 @@ def get_scores_by_quarter(games):
     
         # save game id to column
         game_data_df['game_id'] = game
-        count += 1
         # combine data from each game and save final result to csv
         scores_by_quarter_df = pd.concat([scores_by_quarter_df, game_data_df])
+        
+        if percentage_done >= 75 and cp3 == False:
+            print('            75% checkpoint reached, saving data...')
+            scores_by_quarter_df.to_csv('nba_scores_by_q.csv', index = False)
+            cp3 = True
+        elif percentage_done >= 50 and cp2 == False:
+            print('            50% checkpoint reached, saving data...')
+            scores_by_quarter_df.to_csv('nba_scores_by_q.csv', index = False) 
+            cp2 = True
+        elif percentage_done >= 25 and cp1 == False:
+            print('            25% checkpoint reached, saving data...')
+            scores_by_quarter_df.to_csv('nba_scores_by_q.csv', index = False)
+            cp1 = True
+            
+        count += 1
+        # END game loop
         
     scores_by_quarter_df.to_csv('nba_scores_by_q.csv', index = False)
     
